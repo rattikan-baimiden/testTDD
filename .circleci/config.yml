@@ -1,59 +1,44 @@
 version: 2.1
-orbs:
-  python: circleci/python@1.4.0
-  aws-cli: circleci/aws-cli@1.2.1
 
-executors:
-  python-linter:
-    docker:
-      - image: cimg/python:3.8
+orbs:
+  python: circleci/python@0.3.2
+  aws-cli: circleci/aws-cli@1.2.1
 
 jobs:
   build-and-test:
-    executor: python-linter
+    executor:
+      name: python/default
+      tag: "3.7"
     steps:
       - checkout
-      - python/install-packages:
-          pkg-manager: pip
-      - run: pip install pytest requests
-      - run:
-          name: Create ENV
-          command: env > .env
-      - run:
-          name: Run tests
-          command: python -m pytest
-
-  build_and_publish:
-    executor: python-linter
-    steps:
-      - checkout
-      - python/install-packages:
-          pkg-manager: pip
-      - run: pip install pytest requests
       - run:
           name: Setup Virtual env
           command: |
-            virtualenv -p python3.8 env            
+            virtualenv -p python3.7 env
             echo "source ./env/bin/activate" >> $BASH_ENV
       - run:
-          name: Create ENV
+          name: Install Dependencies
+          command: pip install -r requirements.txt
+      - run:
+          name: Create ENV file
           command: env > .env
-      - run: python -m site
+      - run:
+          name: Test
+          command: pytest
       - run:
           name: Create Zipfile archive of Dependencies
           command: |
-            cd env/lib/python3.8/site-packages
+            cd env/lib/python3.7/site-packages
             zip -r9 ../../../../function.zip .
       - run:
           name: Add App to Zipfile
           command: zip -g ./function.zip .env -r app
-      - run: ls
       - persist_to_workspace:
           root: .
           paths:
             - function.zip
 
-  deploy:
+  deploy-dev:
     executor: aws-cli/default
     steps:
       - attach_workspace:
@@ -64,27 +49,24 @@ jobs:
           aws-secret-access-key: AWS_SECRET_ACCESS_KEY
       - run:
           name: Upload to S3
-          command: aws s3 cp function.zip s3://tumtpk/function.zip
+          command: aws s3 cp function.zip s3://rattikanbaimiden/function.zip
       - run:
           name: Deploy new Lambda
-          command: aws lambda update-function-code --function-name tumtpk --s3-bucket tumtpk --s3-key function.zip
+          command: aws lambda update-function-code --function-name rattikanbaimiden --s3-bucket rattikanbaimiden --s3-key function.zip
 
 workflows:
-  my-workflow:
+  build-test-and-deploy:
     jobs:
       - build-and-test:
-          context:
-            - lab_test06
-      - build_and_publish:
-          context:
-            - lab_test06
+          context: aws_test
+          filters:
+            branches:
+              only:
+                - main
+      - deploy-dev:
+          context: aws_test
           requires:
             - build-and-test
-      - deploy:
-          context:
-            - aws_lab06
-          requires:
-            - build_and_publish
           filters:
             branches:
               only:
